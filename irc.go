@@ -1,0 +1,76 @@
+package main
+
+import (
+	"fmt"; "log"
+	"regexp"
+	"github.com/lrstanley/girc"
+)
+
+var IEmojiRegex    *regexp.Regexp
+var IMentionRegex  *regexp.Regexp
+var IUserDChannels map[string]string // map IRC username → Discord Channel
+
+var IBot *girc.Client
+
+func IOnConnect(c *girc.Client, e girc.Event) {
+	ch := Config.IRCChannel
+	c.Cmd.Join(ch)
+	log.Printf("Joining %s\n", ch)
+}
+
+func IOnPrivMsg(c *girc.Client, e girc.Event) {
+	// Delegate channel messages to discord bot so he can do webhook stuff
+	if e.IsFromChannel() { DIRCMessage(e.Source.Name, e.Last()); return }
+	// private message, channel switch
+	// get ready for wrong
+	reply := "Canal indisponível. Opções são:"
+	msg := e.Last()
+	for hname, _ := range Config.Hooks {
+		if hname == msg {
+			IUserDChannels[e.Source.Name] = hname
+			c.Cmd.Messagef(e.Source.Name, "Você está postando em %s", hname)
+			log.Printf("[IRC] Moved %s's messages to %s", e.Source.Name, hname)
+			return
+		}
+		reply = fmt.Sprintf("%s %s ;", reply, hname)
+	}
+	c.Cmd.Message(e.Source.Name, reply)
+}
+
+func IReplEmoji(input string) string {
+	if DEmoji == nil { return input }
+	for _, e := range DEmoji {
+		 if fmt.Sprintf(":%s:", e.Name) == input {
+			prefix := ""
+			if e.Animated { prefix = "a" }
+			return fmt.Sprintf("<%s:%s:%s>", prefix, e.Name, e.ID)
+		}
+	}
+	return input
+}
+
+func IReplMention(input string) string {
+	if DNameToID == nil { return input }
+	for name, u := range DNameToID {
+		if (input == name + ":") || (input == "@" + name) {
+			return fmt.Sprintf("<@!%s>", u.ID)
+		}
+	}
+	return input
+}
+
+func IInit() error {
+	IEmojiRegex = regexp.MustCompile(":[[:alnum:]_]+:")
+	IMentionRegex = regexp.MustCompile("^[[:alnum:]_]+:|@[[:alnum:]_]+")
+	IUserDChannels = make(map[string]string)
+
+	// Init bot
+	IBot = girc.New(Config.IRCSettings)
+	IBot.Handlers.Add(girc.CONNECTED, IOnConnect)
+	IBot.Handlers.Add(girc.PRIVMSG, IOnPrivMsg)
+
+	if err := IBot.Connect(); err != nil {
+		return fmt.Errorf("Can't connect to IRC, %s", err)
+	}
+	return nil
+}
