@@ -7,26 +7,61 @@ import (
 	"regexp"
 )
 
-var DBot     *discordgo.Session
+var DBot   *discordgo.Session
 var DEmoji []*discordgo.Emoji
 
 var DEmojiRegex *regexp.Regexp
 
+// Formats message for IRC
+func DMessageForIRC(m *discordgo.Message) string {
+	msg := m.ContentWithMentionsReplaced()
+	// add embeds
+	for _, e := range m.Embeds {
+		msg = fmt.Sprintf("%s %s", msg, e.URL)
+	}
+	// add attachments
+	for _, e := range m.Attachments {
+		msg = fmt.Sprintf("%s %s", msg, e.URL)
+	}
+	// Fix emoji
+	msg = DEmojiRegex.ReplaceAllString(msg, "$1")
+	// IRC doesn't like multiline
+	msg = strings.Replace(msg,"\n", " ",-1)
+	return msg
+}
+
+func DGetNick(u *discordgo.User) string {
+	member, err := DBot.GuildMember(Config.GuildID, u.ID)
+	if err == nil && member.Nick != "" {
+		return member.Nick
+	} else {
+		return u.Username
+	}
+
+}
+
+func DGetNickByID(ID string) string {
+	u, err := DBot.User(ID)
+	if err == nil {
+		return DGetNick(u)
+	}
+	return "usuário desconhecido"
+}
+
+func DChannelName(ID string) string {
+	channel, err := DBot.Channel(ID)
+	if err == nil {
+		return channel.Name
+	}
+	return "canal desconhecido"
+}
 
 func DOnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// Ignore messages from ourselves
 	for _, wh := range Config.Hooks { if wh.ID == m.WebhookID { return } }
 
 	// Holds nick/user from poster, as well as who he replies to
-	var OriginString string
-
-	// Try to get nickname
-	member, err := DBot.GuildMember(m.GuildID, m.Author.ID)
-	if err == nil && member.Nick != "" {
-		OriginString = member.Nick
-	} else {
-		OriginString = m.Author.Username
-	}
+	OriginString := DGetNick(m.Author)
 
 	// Cache UID and avatar for mentions and webhook
 	aurl := m.Author.AvatarURL("")
@@ -41,36 +76,14 @@ func DOnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		var DestString string
 		ReplyTo, err := DBot.ChannelMessage(m.MessageReference.ChannelID, m.MessageReference.MessageID)
 		if err == nil {
-			// Try to get nick of person being replied to
-			replymember, err  := DBot.GuildMember(m.MessageReference.GuildID, ReplyTo.Author.ID)
-			if err == nil && replymember.Nick != "" {
-				DestString = replymember.Nick
-			} else {
-				DestString = ReplyTo.Author.Username
-			}
-		} else {
-			DestString = "uma mensagem apagada"
+			DestString = fmt.Sprintf("%s \"%-10s\"...", DGetNick(ReplyTo.Author), DMessageForIRC(ReplyTo))
 		}
 		OriginString = fmt.Sprintf("%s em resposta a %s", OriginString, DestString)
 	}
 
-	// message
-	msg := m.ContentWithMentionsReplaced()
-	// add embeds
-	for _, e := range m.Embeds {
-		msg = fmt.Sprintf("%s %s", msg, e.URL)
-	}
-	// add attachments
-	for _, e := range m.Attachments {
-		msg = fmt.Sprintf("%s %s", msg, e.URL)
-	}
-
 	// Try to get channel name
-	channel, err := DBot.Channel(m.ChannelID)
-	if err != nil { return }
-	msg = DEmojiRegex.ReplaceAllString(msg, "$1")
-	msg = strings.Replace(msg,"\n", " ",-1)
-	IBot.Cmd.Messagef(Config.IRCChannel, "%s no %s: %s", OriginString, channel.Name, msg)
+	msg := DMessageForIRC(m.Message)
+	IBot.Cmd.Messagef(Config.IRCChannel, "%s no %s: %s", OriginString, DChannelName(m.ChannelID), msg)
 	log.Printf("[DBot] Relayed message \"%s\" (from %s) to IRC", msg, m.Author.Username)
 }
 
@@ -87,8 +100,31 @@ func DIRCMessage(Iu string, Im string) {
 		Content: Im,
 		AvatarURL: DNameToID[Iu].AvatarURL,
 	}
-	DBot.WebhookExecute(Config.Hooks[id].ID, Config.Hooks[id].Token, false, &params)
-	log.Printf("[DBot] Relayed message \"%s\" (from %s) to Discord", Im, Iu)
+	_, err := DBot.WebhookExecute(Config.Hooks[id].ID, Config.Hooks[id].Token, false, &params)
+	if err == nil {
+		log.Printf("[DBot] Relayed message \"%s\" (from %s) to Discord", Im, Iu)
+	} else {
+		log.Printf("[DBot] Failed to relay \"%s\" to Discord (%s)", Im, err)
+	}
+}
+
+func DOnGuildEmojisUpdate(s *discordgo.Session, e *discordgo.GuildEmojisUpdate) { DEmoji = e.Emojis }
+
+func DRelayReaction(e discordgo.MessageReaction, verb string) {
+	var err error
+	m, err := DBot.ChannelMessage(e.ChannelID, e.MessageID)
+	if err != nil {
+		log.Printf("Can't log reaction: %s\n", err)
+		return
+	}
+	IBot.Cmd.Messagef(Config.IRCChannel,"%s %s :%s: a \"%-10s\"... de %s no %s",
+		DGetNickByID(e.UserID),
+		verb,
+		e.Emoji.Name,
+		DMessageForIRC(m),
+		DGetNick(m.Author),
+		DChannelName(e.ChannelID),
+	)
 }
 
 func DInit() error {
@@ -104,8 +140,11 @@ func DInit() error {
 	}
 
 	DBot.AddHandler(DOnMessageCreate)
+	DBot.AddHandler(DOnGuildEmojisUpdate)
+	DBot.AddHandler(func (s *discordgo.Session, e *discordgo.MessageReactionAdd) { DRelayReaction(*e.MessageReaction, "reagiu com") })
+	DBot.AddHandler(func (s *discordgo.Session, e *discordgo.MessageReactionRemove) { DRelayReaction(*e.MessageReaction, "retirou a reação com") })
 
-	DBot.Identify.Intents = discordgo.IntentsGuildMessages // fodase copiei e colei
+	DBot.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsGuildEmojis | discordgo.IntentsGuildMessageReactions
 
 	if DBot.Open() != nil {
 		return fmt.Errorf("%s", "Can't open a socket with Discord")

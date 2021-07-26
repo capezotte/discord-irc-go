@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-	"os"; //"os/signal"; "syscall"
+	"os"; "os/signal"; "syscall"
 	"github.com/lrstanley/girc"
 	"encoding/json"
 	"io/ioutil"
@@ -24,28 +24,33 @@ type Settings struct {
 }
 var Config Settings
 
+func DotJsonToStruct(path string, st interface{}) error {
+	log.Printf("Reading %s\n", path)
+	content, _ := ioutil.ReadFile(path)
+	err := json.Unmarshal([]byte(content), st)
+	return err
+}
+
 func main() {
 	wd, _ := os.Getwd()
 	log.Printf("Starting bridge. Work directory is %s.\n", wd)
 
+	var err error
 	// Read config
-	log.Println("Importing settings from cfg.json.")
-	content, _ := ioutil.ReadFile("cfg.json")
-	var err error = json.Unmarshal([]byte(content), &Config)
-	if err != nil { log.Fatalln("Absent or invalid cfg.json!", err) }
+	if err = DotJsonToStruct("cfg.json", &Config); err != nil { log.Fatalln("Absent or invalid cfg.json!", err) }
 
 	// Read previous avatar data
-	log.Println("Importing previous avatar data from av.json.")
-	avatars, _ := ioutil.ReadFile("av.json")
-	err = json.Unmarshal([]byte(avatars), &DNameToID)
-	if err != nil {
-		log.Println("Can't read data, starting from scratch.")
+	if err = DotJsonToStruct("av.json", &DNameToID); err != nil {
+		log.Printf("Can't read data: %s, starting from scratch.", err)
 		DNameToID = make(map[string]DCachedUserData)
 	}
 
-	sc := make(chan os.Signal, 1)
+	heavy := make(chan os.Signal, 1)
+	signal.Notify(heavy, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
+
 	go func() {
-		<-sc
+		<-heavy
+		// oh no i'm dead
 		log.Println("Shutting down...")
 		DBot.Close()
 		IBot.Close()
