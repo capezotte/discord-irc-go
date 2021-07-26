@@ -117,14 +117,16 @@ func DRelayReaction(e discordgo.MessageReaction, verb string) {
 		log.Printf("Can't log reaction: %s\n", err)
 		return
 	}
+	uname := DGetNick(m.Author)
 	IBot.Cmd.Messagef(Config.IRCChannel,"%s %s :%s: a \"%-10s\"... de %s no %s",
 		DGetNickByID(e.UserID),
 		verb,
 		e.Emoji.Name,
 		DMessageForIRC(m),
-		DGetNick(m.Author),
+		uname,
 		DChannelName(e.ChannelID),
 	)
+	log.Printf("[DBot] Relayed reaction %s (verb: %s) from %s to IRC", e.Emoji.Name, verb, uname)
 }
 
 func DInit() error {

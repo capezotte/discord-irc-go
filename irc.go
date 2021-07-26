@@ -40,7 +40,7 @@ func IOnPrivMsg(c *girc.Client, e girc.Event) {
 func IReplEmoji(input string) string {
 	if DEmoji == nil { return input }
 	for _, e := range DEmoji {
-		 if fmt.Sprintf(":%s:", e.Name) == input {
+		if e.Name == input[1:len(input)-1] {
 			prefix := ""
 			if e.Animated { prefix = "a" }
 			return fmt.Sprintf("<%s:%s:%s>", prefix, e.Name, e.ID)
@@ -51,17 +51,17 @@ func IReplEmoji(input string) string {
 
 func IReplMention(input string) string {
 	if DNameToID == nil { return input }
-	for name, u := range DNameToID {
-		if (input == name + ":") || (input == "@" + name) {
-			return fmt.Sprintf("<@!%s>", u.ID)
-		}
+	u := string(IMentionRegex.ExpandString([]byte{}, "$u", input, IMentionRegex.FindStringSubmatchIndex(input)))
+	if DNameToID[u].ID != "" {
+		return fmt.Sprintf("<@!%s>", DNameToID[u].ID)
+	} else {
+		return input
 	}
-	return input
 }
 
 func IInit() error {
 	IEmojiRegex = regexp.MustCompile(":[[:alnum:]_]+:")
-	IMentionRegex = regexp.MustCompile("^[[:alnum:]_]+:|@[[:alnum:]_]+")
+	IMentionRegex = regexp.MustCompile("^(?P<u>[[:alnum:]_]+):|@(?P<u>[[:alnum:]_]+)")
 	IUserDChannels = make(map[string]string)
 
 	// Init bot
