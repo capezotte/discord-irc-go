@@ -59,7 +59,7 @@ func IReplMention(input string) string {
 	}
 }
 
-func IInit() error {
+func IInit() {
 	IEmojiRegex = regexp.MustCompile(":[[:alnum:]_]+:")
 	IMentionRegex = regexp.MustCompile("^(?P<u>[[:alnum:]_]+):|@(?P<u>[[:alnum:]_]+)")
 	IUserDChannels = make(map[string]string)
@@ -70,7 +70,6 @@ func IInit() error {
 	IBot.Handlers.Add(girc.PRIVMSG, IOnPrivMsg)
 
 	if err := IBot.Connect(); err != nil {
-		return fmt.Errorf("Can't connect to IRC, %s", err)
+		panic(fmt.Sprintf("Can't connect to IRC, %s", err))
 	}
-	return nil
 }

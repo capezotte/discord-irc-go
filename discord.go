@@ -73,12 +73,10 @@ func DOnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	// Handle replying
 	if m.MessageReference != nil {
-		var DestString string
 		ReplyTo, err := DBot.ChannelMessage(m.MessageReference.ChannelID, m.MessageReference.MessageID)
 		if err == nil {
-			DestString = fmt.Sprintf("%s \"%-10s\"...", DGetNick(ReplyTo.Author), DMessageForIRC(ReplyTo))
+			OriginString = fmt.Sprintf("%s \"%-10s\"...", DGetNick(ReplyTo.Author), DMessageForIRC(ReplyTo))
 		}
-		OriginString = fmt.Sprintf("%s em resposta a %s", OriginString, DestString)
 	}
 
 	// Try to get channel name
@@ -129,7 +127,7 @@ func DRelayReaction(e discordgo.MessageReaction, verb string) {
 	log.Printf("[DBot] Relayed reaction %s (verb: %s) from %s to IRC", e.Emoji.Name, verb, uname)
 }
 
-func DInit() error {
+func DInit() {
 	var err error
 
 	// Regexps
@@ -138,7 +136,7 @@ func DInit() error {
 	DBot, err = discordgo.New("Bot " + Config.Token)
 
 	if err != nil {
-		return fmt.Errorf("%s", "Failed to create a discord session.")
+		panic("Failed to create a discord session.")
 	}
 
 	DBot.AddHandler(DOnMessageCreate)
@@ -149,12 +147,11 @@ func DInit() error {
 	DBot.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsGuildEmojis | discordgo.IntentsGuildMessageReactions
 
 	if DBot.Open() != nil {
-		return fmt.Errorf("%s", "Can't open a socket with Discord")
+		panic("Can't open a socket with Discord")
 	}
 
 	DEmoji, err = DBot.GuildEmojis(Config.GuildID)
 	if err != nil {
 		fmt.Println("Failed to get emoji.")
 	}
-	return nil
 }

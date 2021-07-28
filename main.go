@@ -62,7 +62,5 @@ func main() {
 	}()
 
 	// Instance bots
-	if DInit() != nil || IInit() != nil {
-		panic("One of the bots failed to initialize!")
-	}
+	DInit(); IInit()
 }
