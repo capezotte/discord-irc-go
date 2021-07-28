@@ -75,7 +75,7 @@ func DOnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.MessageReference != nil {
 		ReplyTo, err := DBot.ChannelMessage(m.MessageReference.ChannelID, m.MessageReference.MessageID)
 		if err == nil {
-			OriginString = fmt.Sprintf("%s \"%-10s\"...", DGetNick(ReplyTo.Author), DMessageForIRC(ReplyTo))
+			OriginString = fmt.Sprintf("%s em reposta a %s \"%-10s\"...", OriginString, DGetNick(ReplyTo.Author), DMessageForIRC(ReplyTo))
 		}
 	}
 
